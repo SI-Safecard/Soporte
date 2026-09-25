@@ -747,7 +747,7 @@ function renderHist(){
 let DET=null;
 function abrirDetalle(code){
   const s=DATA.find(x=>x.code===code); if(!s){ alert('No se encontró esa solicitud.'); return; }
-  DET={ s, items:(s.articulos||[]).map(a=>({articulo:a.articulo,config:a.config,cantidadSolicitada:Number(a.cantidad)||0,
+  DET={ s, items:(s.articulos||[]).map(a=>({fila:a.fila,articulo:a.articulo,config:a.config,cantidadSolicitada:Number(a.cantidad)||0,
         cantidadRecibida:a.estado?(Number(a.cantidadRecibida)||0):(Number(a.cantidad)||0),estado:a.estado||''})) };
   $('detTitulo').textContent=s.code+' — '+(s.proyecto||'');
   $('detSub').textContent=fmtFechaCorta(s.fecha)+' · '+nombreTecnico(s.correo)+(s.desdeForm?' · (respuesta del Google Form)':'');
@@ -785,7 +785,7 @@ async function guardarRecepcion(){
   btn.disabled=true; msg.textContent='Guardando…'; msg.style.color='var(--muted)';
   try{
     const data=await api({action:'confirmar',fila:DET.s.fila,codigo:DET.s.codigo||'',proyecto:DET.s.proyecto,
-      articulos:DET.items.map(it=>({articulo:it.articulo,cantidadRecibida:it.estado==='Recibido'?it.cantidadRecibida:0,estado:it.estado}))});
+      articulos:DET.items.map(it=>({fila:it.fila,articulo:it.articulo,cantidadRecibida:it.estado==='Recibido'?it.cantidadRecibida:0,estado:it.estado}))});
     if(!data||!data.ok) throw new Error((data&&data.error)||'Respuesta inválida del conector.');
     msg.textContent='✅ Recepción guardada.'; msg.style.color='var(--green)';
     await cargarDatos();
