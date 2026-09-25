@@ -487,15 +487,46 @@ function setSelVal(id,v){ const el=$(id); el.value=v; if(el._cselSync)el._cselSy
 
 /* ======================= SESIÓN ======================= */
 const SES_KEY='soporte_user';
-let SES=null, _authClient=null;
+const GMAIL_SCOPE='https://www.googleapis.com/auth/gmail.send';
+let SES=null, _authClient=null, TOKEN=null, TOKEN_EXP=0;
+function guardarToken(r){
+  if(r && r.access_token && google.accounts.oauth2.hasGrantedAllScopes(r, GMAIL_SCOPE)){
+    TOKEN=r.access_token; TOKEN_EXP=Date.now()+((Number(r.expires_in)||3600)-120)*1000;
+  }
+}
+/* Token para enviar el correo desde la cuenta del técnico. Llamar DENTRO del clic (popup). */
+function obtenerTokenGmail(){
+  if(TOKEN && Date.now()<TOKEN_EXP) return Promise.resolve(TOKEN);
+  return new Promise(resolve=>{
+    try{
+      const tc=google.accounts.oauth2.initTokenClient({client_id:window.GOOGLE_CLIENT_ID,scope:GMAIL_SCOPE,hint:SES&&SES.email,
+        callback:r=>{ guardarToken(r); resolve(TOKEN&&Date.now()<TOKEN_EXP?TOKEN:null); },
+        error_callback:()=>resolve(null)});
+      tc.requestAccessToken({prompt:''});
+    }catch(e){ resolve(null); }
+  });
+}
+function b64utf8(s){ return btoa(unescape(encodeURIComponent(s))); }
+async function enviarGmail(token, c){
+  const from=(SES.nombre&&SES.nombre!==SES.email)?('=?UTF-8?B?'+b64utf8(SES.nombre+' · Soporte Safecard')+'?= <'+SES.email+'>'):SES.email;
+  const cuerpo=b64utf8(c.html).replace(/.{76}/g,'$&\r\n');
+  const msg=['From: '+from,'To: '+c.to].concat(c.cc?['Cc: '+c.cc]:[]).concat([
+    'Subject: =?UTF-8?B?'+b64utf8(c.subject)+'?=','MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8','Content-Transfer-Encoding: base64','',cuerpo]).join('\r\n');
+  const raw=btoa(msg).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const res=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',
+    headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw})});
+  if(!res.ok){ let d=''; try{ d=(await res.json()).error.message; }catch(e){} throw new Error('Gmail '+res.status+(d?': '+d:'')); }
+}
 function sesGuardada(){ try{ return JSON.parse(localStorage.getItem(SES_KEY)||'null'); }catch(e){ return null; } }
 function dominioOk(email){ const d=(window.DOMINIO_PERMITIDO||'').toLowerCase(); return !d || (email||'').toLowerCase().endsWith('@'+d); }
 function login(){
   const msg=$('loginMsg');
   if(!window.google||!google.accounts||!google.accounts.oauth2){ msg.textContent='Google aún carga, reintenta en unos segundos…'; return; }
   if(!_authClient){
-    _authClient=google.accounts.oauth2.initTokenClient({client_id:window.GOOGLE_CLIENT_ID,scope:'openid email profile',callback:async r=>{
+    _authClient=google.accounts.oauth2.initTokenClient({client_id:window.GOOGLE_CLIENT_ID,scope:'openid email profile '+GMAIL_SCOPE,callback:async r=>{
       if(!r||!r.access_token){ msg.textContent='No se pudo iniciar sesión.'; return; }
+      guardarToken(r);
       try{
         const info=await (await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+r.access_token}})).json();
         const email=(info.email||'').toLowerCase();
@@ -688,8 +719,10 @@ async function enviar(){
   const sinCant=items.filter(i=>!i.cantidad);
   if(sinCant.length && !confirm(sinCant.length+' artículo(s) no tienen cantidad. Se enviarán con cantidad 1. ¿Continuar?')) return;
 
+  // Se pide el permiso de Gmail aquí, dentro del clic, para que el navegador no bloquee la ventana
+  const tokenP=obtenerTokenGmail();
   const payload={
-    action:'crear',
+    action:'crear', mailCliente:true,
     correo:SES.email, solicitante:nombreTecnico(SES.email),
     proyecto, ticket:$('sTicket').value.trim(), tipo, fechaVisita,
     articulos:items.map(i=>({articulo:i.articulo,cantidad:i.cantidad||'1',config:i.config})),
@@ -709,7 +742,21 @@ async function enviar(){
       throw new Error('No se pudo confirmar el envío por un problema de red. Antes de reintentar, revisa "Últimas solicitudes" en unos segundos para asegurarte de que no quedó guardada igual.');
     }
     if(!data||!data.ok) throw new Error((data&&data.error)||'Respuesta inválida del conector.');
-    msg.textContent='✅ Enviado'+(data.code?(' · '+data.code):''); msg.style.color='var(--green)';
+    let nota='';
+    if(data.correo){
+      msg.textContent='Guardado '+data.code+' · enviando correo desde tu cuenta…';
+      try{
+        const token=await tokenP;
+        if(!token) throw new Error('sin permiso de Gmail');
+        await enviarGmail(token, data.correo);
+        nota=' · correo enviado desde '+SES.email;
+      }catch(mailErr){
+        console.warn('Correo desde la cuenta del técnico falló:',mailErr);
+        try{ const r=await api({action:'correoRespaldo',code:data.code}); nota=r&&r.ok?' · correo enviado por la cuenta del sistema (respaldo)':' · ⚠️ no se pudo enviar el correo'; }
+        catch(e2){ nota=' · ⚠️ no se pudo enviar el correo'; }
+      }
+    }
+    msg.textContent='✅ Enviado'+(data.code?(' · '+data.code):'')+nota; msg.style.color=/⚠️/.test(nota)?'var(--pc)':'var(--green)';
     limpiarForm();
     cargarDatos();
   }catch(e){ msg.textContent='✗ '+(e.message||e); msg.style.color='var(--nc)'; }
