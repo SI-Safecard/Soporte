@@ -68,7 +68,9 @@
   .btn-sec{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 14px;font-weight:700;cursor:pointer;color:var(--muted);font-family:inherit;font-size:13px}
   .btn-sec:hover{border-color:#C7CCD3;color:var(--ink)}
   .mat-badge{display:inline-flex;align-items:center;gap:5px;background:var(--or-soft);color:var(--or-dark);font-size:11px;font-weight:800;padding:2px 9px;border-radius:999px;margin-left:8px;vertical-align:middle;text-transform:none;letter-spacing:0}
-  .drop{border:1.5px dashed #CBD2D9;border-radius:12px;padding:14px;text-align:center;font-size:13px;color:var(--muted);cursor:pointer;background:#FAFAFA;transition:all .15s}
+  .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;min-height:92px;border:1.5px dashed #CBD2D9;border-radius:12px;padding:16px;text-align:center;font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;background:#FAFAFA;transition:all .15s}
+  .drop .drop-ico{font-size:24px;line-height:1}
+  .drop .sub{font-weight:500}
   .drop:hover,.drop.over{border-color:var(--or);background:var(--or-soft);color:var(--or-dark)}
   .files{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .fchip{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:5px 6px 5px 5px;font-size:12px;max-width:100%}
@@ -248,7 +250,9 @@
         <div class="blk">
           <label class="fl">Material audio / visual <span class="mat-badge" id="sFilesCount">0</span></label>
           <label class="drop" id="sDrop">
-            📷 Toca para agregar fotos o videos <span class="sub">(hasta 5 · o arrástralos aquí)</span>
+            <span class="drop-ico">📷</span>
+            <span>Toca para agregar fotos o videos</span>
+            <span class="sub">Hasta 5 archivos · también puedes arrastrarlos aquí</span>
             <input type="file" id="sFiles" accept="image/*,video/*" multiple style="display:none" onchange="agregarArchivos(this.files);this.value=''">
           </label>
           <div class="files" id="sFileList"></div>
@@ -531,13 +535,17 @@ async function cargarProyectos(){
   const msg=$('proyMsg');
   try{
     const data=await api({action:'proyectos'});
+    if(data&&data.ok&&!Array.isArray(data.proyectos)) throw new Error('el Apps Script publicado es una versión antigua: publica una Nueva versión');
     if(!data||!data.ok) throw new Error((data&&data.error)||'Respuesta inválida');
     PROYECTOS=data.proyectos||[];
     try{ localStorage.setItem('soporte_proyectos_cache',JSON.stringify(PROYECTOS)); }catch(e){}
     llenarProyectos();
     msg.textContent='· '+PROYECTOS.length+' activos'; msg.style.color='var(--green)';
   }catch(e){
-    msg.textContent=PROYECTOS.length?'· usando última lista guardada':'· no se pudo cargar la lista'; msg.style.color='var(--pc)';
+    let det=String(e&&e.message||e);
+    if(/Falta el nombre del proyecto/i.test(det)) det='el Apps Script publicado es una versión antigua: publica una Nueva versión';
+    msg.textContent=(PROYECTOS.length?'· usando última lista guardada':'· no se pudo cargar la lista')+' ('+det+')'; msg.style.color='var(--pc)';
+    console.warn('Proyectos:',det);
     llenarProyectos();
   }
 }
